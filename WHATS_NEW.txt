@@ -1,0 +1,254 @@
+════════════════════════════════════════════════════════════════════════════
+   🚨 NUEVO: SISTEMA DE ALERTAS MEJORADO
+════════════════════════════════════════════════════════════════════════════
+
+¡Se han implementado mejoras IMPORTANTES en el sistema de alertas!
+
+┌────────────────────────────────────────────────────────────────────────┐
+│  ✨ NUEVAS CARACTERÍSTICAS                                             │
+└────────────────────────────────────────────────────────────────────────┘
+
+   1. 📊 INFORMACIÓN DETALLADA EN CADA ALERTA
+      
+      Cada alerta ahora muestra:
+      
+      ✅ Sensor específico que generó la alerta
+      ✅ Valor actual detectado (ej: 42.5°C)
+      ✅ Umbral seguro del sistema (ej: 35°C)  
+      ✅ Porcentaje de exceso calculado automáticamente (↑21.4%)
+      ✅ Razón detallada de por qué se generó la alerta
+      ✅ Análisis del impacto en el ecosistema
+      ✅ Recomendaciones específicas de acción
+
+      Ejemplo:
+      ┌───────────────────────────────────────┐
+      │ 🌡️ Temperatura Crítica               │
+      │                                       │
+      │ Sensor: DHT22 - Temperatura           │
+      │ Valor: 42.5°C (↑21.4%)               │
+      │ Umbral: 35°C                          │
+      │ Exceso: 7.5°C sobre límite            │
+      │                                       │
+      │ Razón: Temperaturas > 35°C afectan    │
+      │ desarrollo de huevos de aves...       │
+      │                                       │
+      │ 💡 Acción: Activar protocolo de      │
+      │ emergencia térmica. Verificar fuego.  │
+      └───────────────────────────────────────┘
+
+
+   2. 🎯 MODAL POPUP PARA ALERTAS CRÍTICAS
+      
+      ✅ Aparece automáticamente cuando hay alerta crítica
+      ✅ Diseño grande y llamativo con animaciones
+      ✅ No puedes perderlo - bloquea suavemente la pantalla
+      ✅ Muestra TODA la información en un solo lugar
+      ✅ Comparación visual: Valor actual vs Umbral
+      ✅ Botones: "Ver Después" y "Resolver Alerta"
+      
+      ╔════════════════════════════════════════╗
+      ║  🔥 ¡ALERTA CRÍTICA!              🔴  ║
+      ║                                        ║
+      ║  Temperatura: 42.5°C                   ║
+      ║  Límite: 35°C                          ║
+      ║  Exceso: 21.4%                         ║
+      ║                                        ║
+      ║  [Información detallada...]            ║
+      ║                                        ║
+      ║  [Ver Después]  [Resolver Alerta]     ║
+      ╚════════════════════════════════════════╝
+
+
+   3. 📢 CINTA DE ADVERTENCIAS EN LA PARTE SUPERIOR
+      
+      ✅ Banner amarillo llamativo en el top de la página
+      ✅ Visible en TODAS las pestañas
+      ✅ Rota automáticamente si hay varias (cada 5 seg)
+      ✅ Muestra sensor, valor y hora
+      ✅ Barra de progreso visual
+      ✅ Botones: "Ver Detalles" y cerrar (X)
+      ✅ No bloquea - puedes seguir trabajando
+      
+      ════════════════════════════════════════════════════
+      ⚠️  ADVERTENCIA                         [1 de 2]
+      Humo en aumento • MQ-135: 55 ppm (↑10% en 5 min)
+      10:15:30         [Ver Detalles]  [X]
+      ════════════════════════════════════════════════════
+      ████████████░░░░░░░░  (barra de progreso)
+
+
+   4. 🔄 SIMULACIÓN AUTOMÁTICA DE ALERTAS
+      
+      ¡Ahora las alertas aparecen AUTOMÁTICAMENTE!
+      
+      Timeline de simulación:
+      
+      ⏱️ 15 seg → 🔴 Modal: Temperatura Crítica (45.2°C)
+      ⏱️ 30 seg → 🟡 Banner: Nivel de humo en aumento
+      ⏱️ 45 seg → 🔴 Modal: Detección de Movimiento
+      ⏱️ 60 seg → 🟡 Banner: Humedad en descenso
+      ⏱️ 80 seg → 🔴 Modal: Calidad de aire crítica
+      
+      ✅ Perfecto para demos y presentaciones
+      ✅ Datos realistas con cálculos automáticos
+      ✅ Diferentes sensores y tipos
+      ✅ Contador de alertas actualizado en tiempo real
+
+
+┌────────────────────────────────────────────────────────────────────────┐
+│  🎯 VENTAJAS PARA USUARIOS EXTERNOS                                    │
+└────────────────────────────────────────────────────────────────────────┘
+
+   ¿Eres nuevo en el sistema? ¡No hay problema!
+   
+   Antes:
+   ❌ "Alerta de temperatura"
+   ❌ ¿Qué sensor? ¿Qué valor? ¿Es grave?
+   
+   Ahora:
+   ✅ Sensor DHT22 en Sector B3
+   ✅ 42.5°C detectados (7.5°C sobre límite de 35°C)
+   ✅ 21.4% de exceso - CRÍTICO
+   ✅ Riesgo para huevos de aves protegidas
+   ✅ Acción: Activar protocolo térmico, verificar incendio
+   
+   👍 TODO claro sin necesidad de manual o capacitación
+
+
+┌────────────────────────────────────────────────────────────────────────┐
+│  🚀 CÓMO PROBARLO                                                      │
+└────────────────────────────────────────────────────────────────────────┘
+
+   1. Inicia la aplicación:
+      
+      cd proyecto-iot
+      npm run dev
+
+   2. Abre http://localhost:3000
+
+   3. ¡ESPERA Y OBSERVA!
+      
+      • A los 15 segundos: POPUP de alerta crítica
+      • A los 30 segundos: Banner amarillo arriba
+      • Continúa cada cierto tiempo...
+
+   4. Interactúa:
+      
+      • Click "Resolver Alerta" en los modales
+      • Click "X" para cerrar advertencias
+      • Click "Alertas" para ver todas con detalle
+      • Observa el contador 🔔 en el header
+
+
+┌────────────────────────────────────────────────────────────────────────┐
+│  📁 ARCHIVOS NUEVOS Y MODIFICADOS                                      │
+└────────────────────────────────────────────────────────────────────────┘
+
+   NUEVOS:
+   ├── src/components/ui/dialog.tsx           (Modal de Radix UI)
+   ├── src/components/ui/alert.tsx            (Componente de alerta)
+   ├── src/components/CriticalAlertModal.tsx  (Modal para críticas)
+   ├── src/components/WarningBanner.tsx       (Banner superior)
+   └── UPDATES_ALERT_SYSTEM.md                (Documentación completa)
+
+   ACTUALIZADOS:
+   ├── src/components/AlertsPanel.tsx         (Info detallada)
+   ├── src/pages/Index.tsx                    (Integración sistema)
+   └── package.json                           (Dependencia dialog)
+
+
+┌────────────────────────────────────────────────────────────────────────┐
+│  📖 DOCUMENTACIÓN                                                      │
+└────────────────────────────────────────────────────────────────────────┘
+
+   Lee documentación completa en:
+   
+   📄 UPDATES_ALERT_SYSTEM.md
+      → Guía completa de todas las mejoras
+      → Ejemplos de uso
+      → Personalización
+      → Integración con backend real
+
+
+┌────────────────────────────────────────────────────────────────────────┐
+│  🎨 EJEMPLO DE ALERTA COMPLETA                                         │
+└────────────────────────────────────────────────────────────────────────┘
+
+   Cuando aparece una alerta crítica, verás:
+   
+   ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+   ┃  🌡️  TEMPERATURA CRÍTICA DETECTADA         🔴     ┃
+   ┃  Detectado: 20/11/2024 10:15:30                   ┃
+   ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+   ┃                                                    ┃
+   ┃  ⚠️  Valores Detectados                           ┃
+   ┃  Sensor: DHT22 - Temperatura                      ┃
+   ┃  Ubicación: Sector B3 - Zona Norte                ┃
+   ┃                                                    ┃
+   ┃  ┌─────────────┐      ┌─────────────┐            ┃
+   ┃  │   42.5°C    │      │    35°C     │            ┃
+   ┃  │   Actual    │      │   Umbral    │            ┃
+   ┃  │  ↑ 21.4%    │      │   Seguro    │            ┃
+   ┃  └─────────────┘      └─────────────┘            ┃
+   ┃                                                    ┃
+   ┃  📋 Análisis de la Situación                      ┃
+   ┃  ───────────────────────────────                  ┃
+   ┃  La temperatura ha superado el umbral crítico     ┃
+   ┃  de 35°C en 7.5°C (21.4% de exceso). Esto        ┃
+   ┃  puede afectar el desarrollo de huevos y          ┃
+   ┃  comprometer especies aviarias protegidas.        ┃
+   ┃  Existe riesgo de estrés térmico en fauna.        ┃
+   ┃                                                    ┃
+   ┃  💡 Recomendación de Acción                       ┃
+   ┃  ────────────────────────────                     ┃
+   ┃  • Activar protocolo de emergencia térmica        ┃
+   ┃  • Verificar posible inicio de incendio           ┃
+   ┃  • Monitorear sensores de humo cercanos           ┃
+   ┃  • Desplegar equipo de guardabosques              ┃
+   ┃                                                    ┃
+   ┃  Exceso detectado: 7.5°C (21.4% sobre límite)     ┃
+   ┃                                                    ┃
+   ┃  [Ver Después]          [Resolver Alerta]         ┃
+   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+
+┌────────────────────────────────────────────────────────────────────────┐
+│  ✨ CARACTERÍSTICAS TÉCNICAS                                           │
+└────────────────────────────────────────────────────────────────────────┘
+
+   📊 Componentes Nuevos:          4
+   📝 Líneas de Código Agregadas:  ~600
+   🎭 Animaciones Implementadas:   8
+   ⏱️  Simulaciones Programadas:    5
+   🎯 Tipos de Alertas:            3 (Critical, Warning, Info)
+   📡 Sensores Monitoreados:       5 (Temp, Humedad, Humo, Sonido, PIR)
+
+
+┌────────────────────────────────────────────────────────────────────────┐
+│  🎉 ¡TODO LISTO!                                                       │
+└────────────────────────────────────────────────────────────────────────┘
+
+   El sistema ahora proporciona:
+   
+   ✅ Información completa y contextual
+   ✅ Notificaciones visuales inmediatas
+   ✅ Simulaciones automáticas para demo
+   ✅ Interfaz intuitiva para no técnicos
+   ✅ Cálculos automáticos de excesos
+   ✅ Guías específicas de acción
+   
+   Perfecto para:
+   • 🎤 Presentaciones y demos
+   • 👥 Capacitación de personal nuevo
+   • 🔬 Validación de funcionamiento
+   • 🌍 Uso real en campo
+
+
+════════════════════════════════════════════════════════════════════════════
+
+   🌳 Desarrollado con 💚 para la Amazonía Peruana
+
+   ¿Preguntas? Lee UPDATES_ALERT_SYSTEM.md para más detalles
+
+════════════════════════════════════════════════════════════════════════════
+

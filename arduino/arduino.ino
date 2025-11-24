@@ -2,71 +2,66 @@
 #include <LiquidCrystal_I2C.h>
 #include <DHT.h>
 
-// ---------------------------------------------------------------------------
-// 1. CONFIGURACIÓN DE PINES Y HARDWARE
-// ---------------------------------------------------------------------------
+#define DEBUG_MODE true 
+#define COMM_SERIAL Serial 
 
-// Sensores
-#define PIN_MQ2         A7      // MQ-2 PIN ANALOGIC
-#define PIN_DHT         41       // DHT PIN DIGITAL
-#define PIN_TRIG        37      // HC-SR04 Trigger
-#define PIN_ECHO        39       // HC-SR04 Echo
-
-// Actuadores
-#define PIN_BUZZER      5      // PWM
+// 1. PIN DEFINITIONS
+#define PIN_MQ2         A7      
+#define PIN_DHT         41      
+#define PIN_TRIG        37      
+#define PIN_ECHO        39      
+#define PIN_BUZZER      5       
 #define PIN_LED_RED     2
 #define PIN_LED_YELLOW  4
 #define PIN_LED_GREEN   3
 
-// Comunicación
-// Usaremos Serial (USB) para debug. Si conectas la RPi a pines TX1/RX1, cambia a "Serial1"
-#define RPI_SERIAL      Serial  
+// 2. CONSTANTS 
+const float K_GAS   = 2.5;  
+const float K_TEMP  = 2.0; 
+const float K_HUM   = 1.0; 
 
-LiquidCrystal_I2C lcd(0x27, 16, 2);  // Dirección usual 0x27 o 0x3F
+// Thresholds
+const float SCORE_WARNING      = 40.0;  
+const float SCORE_DANGER       = 100.0; // High threshold to filter noise
+const int   GAS_THRESHOLD_FIRE = 500;   // Absolute Emergency limit
+const int   DIST_PROXIMITY     = 100;   // cm
+
+// Stability 
+const float ALPHA_CALIBRATION = 0.2; 
+const float ALPHA_RUNTIME     = 0.01;
+
+// Timer 3 runs at 10Hz (0.1s). So 50 ticks = 5.0 seconds.
+const int ALARM_DURATION_TICKS = 50; 
+
+// 3. GLOBAL VARIABLES
+LiquidCrystal_I2C lcd(0x27, 16, 2); 
 DHT dht(PIN_DHT, DHT11);
 
-// ---------------------------------------------------------------------------
-// 2. CONSTANTES Y VARIABLES GLOBALES
-// ---------------------------------------------------------------------------
+// Sensor Data
+float curr_gas, curr_temp, curr_hum, curr_dist;
+float base_gas, base_temp, base_hum;
+float delta_gas, delta_temp, delta_hum; 
+float risk_score = 0;
 
-// Estados del Sistema
-enum SystemState {
-  STATE_BOOT,
-  STATE_CALIBRATION,
-  STATE_MONITORING
-};
-
+// System State
+enum SystemState { STATE_BOOT, STATE_CALIBRATION, STATE_MONITORING };
 SystemState currentState = STATE_BOOT;
 
-// Variable interrupcion
-volatile bool tick_2s_flag = false; 
+// INTERRUPT FLAGS & COUNTERS
+volatile bool flag_read_sensors = false; // Set by Timer 1
+volatile int  calib_step_counter = 0;
 
-// Variables calibracion
-float base_gas = 0;
-float base_temp = 0;
-float base_hum = 0;
-int calibration_ticks = 0;
-const int TARGET_CALIBRATION_TICKS = 15; 
+// ALARM COUNTDOWNS (Managed by Timer 3)
+// If value > 0, the alarm is ACTIVE.
+volatile int timer_fire_ticks = 0;
+volatile int timer_tala_ticks = 0;
+volatile int timer_pres_ticks = 0; // Added Presence Timer
+volatile bool blink_state = false; // Toggles every 0.1s
 
-// Constantes
-const float K_GAS = 1.0;    // Peso para el humo
-const float K_TEMP = 1.5;   // Peso para la temperatura
-const float K_HUM = 0.5;    // Peso para la humedad (inverso)
+// 4. SETUP
 
-const float SCORE_WARNING = 30.0; // Umbral Advertencia
-const float SCORE_DANGER = 80.0;  // Umbral Fuego Confirmado
-const int DIST_PROXIMITY = 100;   // cm (Alerta presencia)
-
-// Variables de Lectura Actual
-float curr_gas, curr_temp, curr_hum, curr_dist;
-float risk_score = 0;
-bool tala_alert_active = false;
-
-// ---------------------------------------------------------------------------
-// 3. CONFIGURACIÓN DE HARDWARE (SETUP)
-// ---------------------------------------------------------------------------
 void setup() {
-  RPI_SERIAL.begin(115200); 
+  COMM_SERIAL.begin(9600); 
   lcd.init();
   lcd.backlight();
   dht.begin();
@@ -78,254 +73,257 @@ void setup() {
   pinMode(PIN_LED_GREEN, OUTPUT);
   pinMode(PIN_BUZZER, OUTPUT);
 
-  // B. Fase 1: POWER ON (Estabilización - 5 Segundos)
-  // El MQ-2 necesita precalentar su resistencia interna 
-  lcd.setCursor(0, 0);
-  lcd.print("SISTEMA ARBOL SOS");
-  lcd.setCursor(0, 1);
-  lcd.print("Estabilizando...");
-  
-  digitalWrite(PIN_LED_YELLOW, HIGH);
-  delay(5000); 
-  digitalWrite(PIN_LED_YELLOW, LOW);
+  lcd.print("SYSTEM BOOT...");
+  delay(1000); 
 
-  // C. Configuración del Timer 1 (Interrupción cada 2 segundos)
-  // Frecuencia CPU = 16MHz. Prescaler = 1024.
-  // Ticks necesarios = (2s * 16,000,000) / 1024 = 31250
-  noInterrupts();           // Deshabilitar interrupciones
-  TCCR1A = 0;               // Limpiar registros
-  TCCR1B = 0;
-  TCNT1  = 0;               // Inicializar contador
-  OCR1A = 31249;            // Valor de comparación (31250 - 1)
-  TCCR1B |= (1 << WGM12);   // Modo CTC (Clear Timer on Compare)
+  // --- TIMER 1 SETUP (0.5Hz / 2s) - SENSORS ---
+  noInterrupts();
+  TCCR1A = 0; TCCR1B = 0; TCNT1  = 0;
+  OCR1A = 31249;            // 16MHz/1024/0.5Hz - 1
+  TCCR1B |= (1 << WGM12);   // CTC
   TCCR1B |= (1 << CS12) | (1 << CS10); // Prescaler 1024
-  TIMSK1 |= (1 << OCIE1A);  // Habilitar interrupción por comparación A
-  interrupts();             // Habilitar interrupciones
+  TIMSK1 |= (1 << OCIE1A);  // Enable Interrupt
 
+  // --- TIMER 3 SETUP (10Hz / 0.1s) - ALARMS & BLINK ---
+  TCCR3A = 0; TCCR3B = 0; TCNT3  = 0;
+  OCR3A = 1561;             // 16MHz/1024/10Hz - 1 (approx 1562.5)
+  TCCR3B |= (1 << WGM32);   // CTC
+  TCCR3B |= (1 << CS32) | (1 << CS30); // Prescaler 1024
+  TIMSK3 |= (1 << OCIE3A);  // Enable Interrupt
+  interrupts();
+
+  // Initial Read
+  readSensors();
+  base_gas = curr_gas; base_temp = curr_temp; base_hum = curr_hum;
   currentState = STATE_CALIBRATION;
-  lcd.clear();
 }
 
-// ---------------------------------------------------------------------------
-// 4. RUTINA DE SERVICIO DE INTERRUPCIÓN (ISR) - EL CORAZÓN
-// ---------------------------------------------------------------------------
+// 5. INTERRUPT SERVICE ROUTINES (ISRs)
+
+// ISR TIMER 1: Triggers Sensor Reading (Every 2s)
 ISR(TIMER1_COMPA_vect) {
-  tick_2s_flag = true; 
+  flag_read_sensors = true;
 }
 
-// ---------------------------------------------------------------------------
-// 5. FUNCIONES AUXILIARES DE SENSORES
-// ---------------------------------------------------------------------------
+// ISR TIMER 3: Handles Actuators & Countdowns (Every 0.1s)
+ISR(TIMER3_COMPA_vect) {
+  //Decrement Alarm Timers
+  if (timer_fire_ticks > 0) timer_fire_ticks--;
+  if (timer_tala_ticks > 0) timer_tala_ticks--;
+  if (timer_pres_ticks > 0) timer_pres_ticks--; // Presence CountDown
+
+  //Global Blink State
+  blink_state = !blink_state;
+}
+
+// 6. SENSOR & HELPER FUNCTIONS
+
+float readAverageMQ2() {
+  long sum = 0;
+  // 50 samples * 500us = ~25ms Total Block 
+  const int SAMPLES = 50; 
+  for(int i=0; i<SAMPLES; i++) {
+    sum += analogRead(PIN_MQ2);
+    delayMicroseconds(500); 
+  }
+  return (float)sum / SAMPLES;
+}
 
 void readSensors() {
-  // 1. MQ-2 (Analógico)
-  // Leemos el valor raw (0-1023). En un entorno real, convertiríamos a Rs/Ro.
-  curr_gas = analogRead(PIN_MQ2); 
-
-  // 2. DHT11 (Digital Lento)
-  // Respetamos el intervalo de 2s indicado en la hoja de datos 
+  curr_gas = readAverageMQ2(); 
   float t = dht.readTemperature();
   float h = dht.readHumidity();
-  
-  // Validación básica para no meter ruido en el cálculo
   if (!isnan(t)) curr_temp = t;
   if (!isnan(h)) curr_hum = h;
 
-  // 3. HC-SR04 (Ultrasonido)
-  // Trigger de 10us
+  digitalWrite(PIN_TRIG, LOW); delayMicroseconds(2);
+  digitalWrite(PIN_TRIG, HIGH); delayMicroseconds(10);
   digitalWrite(PIN_TRIG, LOW);
-  delayMicroseconds(2);
-  digitalWrite(PIN_TRIG, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(PIN_TRIG, LOW);
-  
-  // Timeout de 30ms (aprox 5 metros) para evitar bloqueo si no hay eco
-  long duration = pulseIn(PIN_ECHO, HIGH, 30000); 
-  if (duration == 0) curr_dist = 999; // Fuera de rango
+  long duration = pulseIn(PIN_ECHO, HIGH, 25000); 
+  if (duration == 0) curr_dist = 999; 
   else curr_dist = duration * 0.034 / 2;
+  if (curr_dist == 0) curr_dist = 999;
 }
 
-// ---------------------------------------------------------------------------
-// 6. BUCLE PRINCIPAL (LOOP)
-// ---------------------------------------------------------------------------
+void updateBaselines(float alpha) {
+    base_gas  = (alpha * curr_gas)  + ((1.0 - alpha) * base_gas);
+    base_temp = (alpha * curr_temp) + ((1.0 - alpha) * base_temp);
+    base_hum  = (alpha * curr_hum)  + ((1.0 - alpha) * base_hum);
+}
+
+
+
+
+// 7. DEEP DEBUG & ACTUATORS
+
+void handleActuators() {
+  bool fire_active = (timer_fire_ticks > 0);
+  bool tala_active = (timer_tala_ticks > 0);
+  bool pres_active = (timer_pres_ticks > 0);
+
+  if (fire_active || tala_active) {
+      digitalWrite(PIN_BUZZER, HIGH);
+      
+      if (blink_state) digitalWrite(PIN_LED_RED, HIGH);
+      else digitalWrite(PIN_LED_RED, LOW);
+      
+      digitalWrite(PIN_LED_YELLOW, LOW);
+      digitalWrite(PIN_LED_GREEN, LOW);
+
+      lcd.setCursor(0, 0);
+      if (fire_active && tala_active) lcd.print("CRITICAL: ALL!! ");
+      else if (fire_active)           lcd.print("DANGER: FIRE!   ");
+      else                            lcd.print("ALERT: LOGGING! ");
+
+      lcd.setCursor(0, 1);
+      lcd.print("Tmr:" + String(fire_active ? timer_fire_ticks : timer_tala_ticks) + "   ");
+  }
+  else if (pres_active) {
+      digitalWrite(PIN_BUZZER, LOW); // Silent warning
+      digitalWrite(PIN_LED_RED, LOW);
+      digitalWrite(PIN_LED_GREEN, LOW);
+      digitalWrite(PIN_LED_YELLOW, HIGH); // Solid Yellow
+
+      lcd.setCursor(0, 0); lcd.print("MOVEMENT DET.   ");
+      lcd.setCursor(0, 1); lcd.print("Tmr: " + String(timer_pres_ticks) + " D:" + String((int)curr_dist) + " ");
+  }
+  // --- PRIORITY 3: NORMAL ---
+  else {
+      digitalWrite(PIN_BUZZER, LOW);
+      digitalWrite(PIN_LED_RED, LOW);
+      digitalWrite(PIN_LED_YELLOW, LOW);
+      digitalWrite(PIN_LED_GREEN, HIGH);
+
+      lcd.setCursor(0, 0); lcd.print("SYSTEM ARMED    ");
+      lcd.setCursor(0, 1); lcd.print("G:" + String((int)curr_gas) + " S:" + String((int)risk_score) + "   ");
+  }
+}
+
+
+void printDeepDebug() {
+    if (!DEBUG_MODE) {
+        // Protocolo: HEADER,valor1,valor2...
+        if (timer_fire_ticks > 0) {
+            COMM_SERIAL.print("ALERTA_FUEGO,");
+            COMM_SERIAL.println(risk_score, 0); // Mandamos el Score
+        }
+        else if (timer_pres_ticks > 0) {
+            COMM_SERIAL.print("ALERTA_PRESENCIA,");
+            COMM_SERIAL.println(curr_dist, 0); // Mandamos la distancia en cm
+        }
+        else {
+            COMM_SERIAL.print("NORMAL,");
+            COMM_SERIAL.print(delta_gas, 1); 
+            COMM_SERIAL.print(",");
+            COMM_SERIAL.print(delta_temp, 1); 
+            COMM_SERIAL.print(",");
+            COMM_SERIAL.println(delta_hum, 1);
+        }
+        return;
+    }
+
+    unsigned long uptime = millis() / 1000;
+    COMM_SERIAL.print("\n========== [TIME: "); COMM_SERIAL.print(uptime); COMM_SERIAL.println("s] ==========");
+    
+    // 1. Raw vs Base
+    COMM_SERIAL.print("[SENSORS] | Gas: "); COMM_SERIAL.print(curr_gas); COMM_SERIAL.print("/"); COMM_SERIAL.print(base_gas);
+    COMM_SERIAL.print(" | Temp: "); COMM_SERIAL.print(curr_temp); COMM_SERIAL.print("/"); COMM_SERIAL.print(base_temp);
+    COMM_SERIAL.print(" | Hum: "); COMM_SERIAL.print(curr_hum); COMM_SERIAL.print("/"); COMM_SERIAL.println(base_hum);
+
+    // 2. Logic
+    COMM_SERIAL.print("[LOGIC  ] | Score: "); COMM_SERIAL.print(risk_score);
+    COMM_SERIAL.print(" | Threshold: "); COMM_SERIAL.println(SCORE_DANGER);
+
+    // 3. Timers
+    COMM_SERIAL.print("[ALARMS ] | FIRE_TMR: "); COMM_SERIAL.print(timer_fire_ticks);
+    COMM_SERIAL.print(" | TALA_TMR: "); COMM_SERIAL.print(timer_tala_ticks);
+    COMM_SERIAL.print(" | PRES_TMR: "); COMM_SERIAL.println(timer_pres_ticks);
+    
+    COMM_SERIAL.println("=========================================");
+}
+
+
+// 8. MAIN LOOP
 void loop() {
-  // Verificamos siempre si la RPi manda alerta de tala
-  if (RPI_SERIAL.available() > 0) {
-    String msg = RPI_SERIAL.readStringUntil('\n');
-    msg.trim(); // Quitar espacios
+  
+  if (COMM_SERIAL.available() > 0) {
+    String msg = COMM_SERIAL.readStringUntil('\n');
+    msg.trim();
     if (msg == "ALERTA_TALA") {
-      tala_alert_active = true;
-    } else if (msg == "OK_NORMAL") {
-      tala_alert_active = false;
+       timer_tala_ticks = ALARM_DURATION_TICKS; 
     }
   }
 
-  // --- MÁQUINA DE ESTADOS ---
-  
   switch (currentState) {
-    
-    // ============================================================
-    // ESTADO B: CALIBRACIÓN (30 Segundos)
-    // ============================================================
     case STATE_CALIBRATION:
-      if (tick_2s_flag) {
-        tick_2s_flag = false; // Consumir flag
-        
+      if (flag_read_sensors) {
+        flag_read_sensors = false;
         readSensors();
+        updateBaselines(ALPHA_CALIBRATION);
+        calib_step_counter++;
         
-        // Acumular valores para el promedio
-        base_gas += curr_gas;
-        base_temp += curr_temp;
-        base_hum += curr_hum;
+        lcd.setCursor(0, 0); lcd.print("CALIBRATING...  ");
+        lcd.setCursor(0, 1); lcd.print(String(calib_step_counter) + "/15  " + "G:" + String((int)curr_gas));
         
-        calibration_ticks++;
-        
-        // Feedback visual
-        lcd.setCursor(0, 0);
-        lcd.print("Calibrando...");
-        lcd.setCursor(0, 1);
-        lcd.print("T: " + String(calibration_ticks * 2) + "/30s");
-        
-        // Parpadeo LED Amarillo durante calibración
-        digitalWrite(PIN_LED_YELLOW, !digitalRead(PIN_LED_YELLOW));
-
-        // Condición de Salida
-        if (calibration_ticks >= TARGET_CALIBRATION_TICKS) {
-          base_gas /= TARGET_CALIBRATION_TICKS;
-          base_temp /= TARGET_CALIBRATION_TICKS;
-          base_hum /= TARGET_CALIBRATION_TICKS;
-          
+        if (calib_step_counter >= 15) {
           currentState = STATE_MONITORING;
           lcd.clear();
-          digitalWrite(PIN_LED_YELLOW, LOW);
         }
       }
       break;
 
-    // ============================================================
-    // ESTADO C: MONITOREO ACTIVO
-    // ============================================================
     case STATE_MONITORING:
-      
-      // 1. Tareas Sincronizadas (Cada 2 segundos)
-      if (tick_2s_flag) {
-        tick_2s_flag = false;
-        
+      if (flag_read_sensors) {
+        flag_read_sensors = false;
         readSensors();
-        
-        // --- Cálculo de Riesgo Ponderado ---
-        // Delta positivo = peligro (más gas, más temp, menos humedad)
-        float delta_gas = (curr_gas - base_gas);
-        float delta_temp = (curr_temp - base_temp);
-        float delta_hum = (base_hum - curr_hum); // Inverso: bajar humedad es peligroso
-        
-        // Evitar valores negativos que resten riesgo
+
+        // 1. CALCULATIONS
+        delta_gas = curr_gas - base_gas;
+        delta_temp = curr_temp - base_temp;
+        delta_hum = base_hum - curr_hum;
+
         if(delta_gas < 0) delta_gas = 0;
         if(delta_temp < 0) delta_temp = 0;
-        
+        if(delta_hum < 0) delta_hum = 0;
+
         risk_score = (K_GAS * delta_gas) + (K_TEMP * delta_temp) + (K_HUM * delta_hum);
+        if (delta_temp > 2.0 && delta_hum > 5.0) risk_score += 20.0;
+
+        // 2. FIRE LOGIC (WITH PERSISTENCE)
+        static int fire_persistence = 0;
         
-        // --- Transmisión UART (Heartbeat de datos) ---
-        RPI_SERIAL.print("S:DATOS,G:");
-        RPI_SERIAL.print(curr_gas);
-        RPI_SERIAL.print(",T:");
-        RPI_SERIAL.print(curr_temp);
-        RPI_SERIAL.print(",H:");
-        RPI_SERIAL.print(curr_hum);
-        RPI_SERIAL.print(",D:");
-        RPI_SERIAL.print(curr_dist);
-        RPI_SERIAL.print(",R:"); // Enviamos también el puntaje calculado
-        RPI_SERIAL.println(risk_score);
-        
-        // Transmisión Extraordinaria
-        if (risk_score > SCORE_DANGER) {
-           RPI_SERIAL.print("ALERTA:PELIGRO_PUNTAJE:");
-           RPI_SERIAL.println(risk_score);
+        bool massive_fire = (curr_gas > GAS_THRESHOLD_FIRE);
+        bool potential_fire = (risk_score > SCORE_DANGER);
+
+        if (massive_fire) {
+             timer_fire_ticks = ALARM_DURATION_TICKS;
+             fire_persistence = 0;
+        } 
+        else if (potential_fire) {
+             fire_persistence++;
+             // REQUIRE 2 CONSECUTIVE CYCLES (4 Seconds) of High Score
+             if (fire_persistence >= 2) {
+                 timer_fire_ticks = ALARM_DURATION_TICKS;
+                 fire_persistence = 0; 
+             }
+        } 
+        else {
+             fire_persistence = 0;
+             // Only update baseline if air is clean
+             if (curr_gas < base_gas) updateBaselines(0.05); // Fast recover
+             else updateBaselines(0.002); // Slow drift
         }
+
+        // 3. PRESENCE LOGIC (WITH TIMER LATCH)
+        if (curr_dist < DIST_PROXIMITY) {
+            timer_pres_ticks = ALARM_DURATION_TICKS; 
+        }
+
+        // 4. DEBUG
+        printDeepDebug(); 
       }
 
-      // 2. Evaluación Lógica y Actuación (Se ejecuta rápido en cada ciclo del loop)
-      // El estado de los actuadores se refresca constantemente para asegurar respuesta inmediata
-      // a eventos como Tala (que llega por Serial asíncrono) o Proximidad.
-
-      // PRIORIDAD 1: TALA ILEGAL (Externa)
-      if (tala_alert_active) {
-        actuateAlarm("ALERTA: TALA", true); // Sirena ON
-      }
-      // PRIORIDAD 2: INCENDIO (Interna - Algoritmo)
-      else if (risk_score > SCORE_DANGER) {
-        actuateAlarm("PELIGRO: FUEGO", true);
-      }
-      // PRIORIDAD 3: PRESENCIA (Silenciosa)
-      else if (curr_dist < DIST_PROXIMITY) {
-        // Alerta silenciosa: Solo LCD y LED Amarillo fijo, SIN buzzer
-        updateLEDs(false, true, false); 
-        digitalWrite(PIN_BUZZER, LOW);
-        lcd.setCursor(0, 0);
-        lcd.print("MOVIMIENTO DET.");
-        lcd.setCursor(0, 1);
-        lcd.print("Dist: " + String(curr_dist) + "cm  ");
-      }
-      // PRIORIDAD 4: ADVERTENCIA AMBIENTAL
-      else if (risk_score > SCORE_WARNING) {
-        updateLEDs(false, true, false);
-        digitalWrite(PIN_BUZZER, LOW);
-        lcd.setCursor(0, 0);
-        lcd.print("Riesgo Elevado  ");
-        lcd.setCursor(0, 1);
-        lcd.print("Score: " + String(risk_score) + "   ");
-      }
-      // ESTADO NORMAL
-      else {
-        updateLEDs(false, false, true); // Solo Verde
-        digitalWrite(PIN_BUZZER, LOW);
-        
-        // Mostrar datos cíclicos en LCD (o estáticos)
-        lcd.setCursor(0, 0);
-        lcd.print("Monitoreando... ");
-        lcd.setCursor(0, 1);
-        lcd.print("T:" + String((int)curr_temp) + " H:" + String((int)curr_hum) + "% OK ");
-      }
+      handleActuators();
       break;
   }
-}
-
-// ---------------------------------------------------------------------------
-// 7. FUNCIONES DE CONTROL DE ACTUADORES
-// ---------------------------------------------------------------------------
-
-void updateLEDs(bool red, bool yellow, bool green) {
-  digitalWrite(PIN_LED_RED, red);
-  digitalWrite(PIN_LED_YELLOW, yellow);
-  digitalWrite(PIN_LED_GREEN, green);
-}
-
-// Rutina de alarma sonora y visual
-void actuateAlarm(String lcdMsg, bool soundEnabled) {
-  // Parpadeo rápido del LED Rojo (efecto visual de emergencia)
-  // Usamos millis para no bloquear con delay()
-  static unsigned long lastBlink = 0;
-  static bool ledState = false;
-  
-  if (millis() - lastBlink > 100) { // 100ms parpadeo rápido
-    lastBlink = millis();
-    ledState = !ledState;
-    digitalWrite(PIN_LED_RED, ledState);
-  }
-  
-  digitalWrite(PIN_LED_YELLOW, LOW);
-  digitalWrite(PIN_LED_GREEN, LOW);
-  
-  if (soundEnabled) {
-    // Tono de sirena básico
-    digitalWrite(PIN_BUZZER, HIGH); 
-  } else {
-    digitalWrite(PIN_BUZZER, LOW);
-  }
-  
-  lcd.setCursor(0, 0);
-  lcd.print(lcdMsg);
-  // Limpiar segunda línea para claridad
-  lcd.setCursor(0, 1);
-  lcd.print("ACCION REQUERIDA");
 }

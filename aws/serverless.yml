@@ -1,0 +1,54 @@
+service: amazonia-monitor-lorawan
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  iam:
+    role: arn:aws:iam::920413422536:role/LabRole
+  environment:
+    TABLE_NAME: ${self:custom.tableName}
+    SNS_TOPIC_ARN: ${self:custom.snsTopicArn, ''}
+
+functions:
+  uplinkProcessor:
+    handler: aws/lambda-uplink-processor.handler
+    description: Decodes LoRa P2P uplinks from API Gateway and stores telemetry in DynamoDB
+    timeout: 10
+    memorySize: 256
+    runtime: nodejs18.x
+    events:
+      - http:
+          path: telemetry
+          method: post
+          cors: true
+
+resources:
+  Resources:
+    EnvironmentalEventsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.tableName}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: pk
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+        KeySchema:
+          - AttributeName: pk
+            KeyType: HASH
+          - AttributeName: sk
+            KeyType: RANGE
+
+custom:
+  tableName: ${opt:table, 'EnvironmentalEvents'}
+  snsTopicArn: ${opt:sns, ''}
+
+package:
+  individually: true
+  patterns:
+    - '!**'
+

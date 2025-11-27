@@ -21,7 +21,7 @@ from datetime import datetime
 # Configuración
 SERIAL_PORT = "COM3"  # Windows: COM3, Linux: /dev/ttyUSB0
 BAUDRATE = 9600
-API_GATEWAY_URL = ""  # Se debe configurar después del deploy
+API_GATEWAY_URL = "https://zv4065j3ui.execute-api.us-east-1.amazonaws.com/dev/telemetry"
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # segundos
 

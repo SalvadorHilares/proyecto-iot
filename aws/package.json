@@ -1,0 +1,31 @@
+{
+  "name": "amazonia-monitor-aws",
+  "version": "1.0.0",
+  "description": "AWS Lambda functions for Amazonía Monitor LoRa P2P integration",
+  "main": "lambda-uplink-processor.js",
+  "scripts": {
+    "deploy": "serverless deploy",
+    "deploy:dev": "serverless deploy --stage dev --region us-east-1 --table EnvironmentalEvents",
+    "deploy:prod": "serverless deploy --stage prod --region us-east-1 --table EnvironmentalEvents",
+    "remove": "serverless remove",
+    "logs": "serverless logs -f uplinkProcessor -t",
+    "info": "serverless info"
+  },
+  "keywords": [
+    "serverless",
+    "aws",
+    "lambda",
+    "lorawan",
+    "iot"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "serverless": "^3.38.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.490.0",
+    "@aws-sdk/client-sns": "^3.490.0"
+  }
+}
+

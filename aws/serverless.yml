@@ -7,14 +7,14 @@ provider:
   region: ${opt:region, 'us-east-1'}
   stage: ${opt:stage, 'dev'}
   iam:
-    role: arn:aws:iam::920413422536:role/LabRole
+    role: arn:aws:iam::079902990209:role/LabRole
   environment:
     TABLE_NAME: ${self:custom.tableName}
     SNS_TOPIC_ARN: ${self:custom.snsTopicArn, ''}
 
 functions:
   uplinkProcessor:
-    handler: aws/lambda-uplink-processor.handler
+    handler: lambda-uplink-processor.handler
     description: Decodes LoRa P2P uplinks from API Gateway and stores telemetry in DynamoDB
     timeout: 10
     memorySize: 256
@@ -48,7 +48,16 @@ custom:
   snsTopicArn: ${opt:sns, ''}
 
 package:
-  individually: true
   patterns:
-    - '!**'
+    - '!node_modules/**'
+    - '!package*.json'
+    - '!*.md'
+    - '!*.sh'
+    - '!*.py'
+    - '!requirements.txt'
+    - '!test-*.sh'
+    - '!test-*.md'
+    - '!frontend-*.md'
+    - 'lambda-uplink-processor.js'
+    - 'node_modules/@aws-sdk/**'
 

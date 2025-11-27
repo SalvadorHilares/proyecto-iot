@@ -2,7 +2,7 @@
 
 ## ✅ Estado Actual
 
-- **API Gateway URL**: `https://zv4065j3ui.execute-api.us-east-1.amazonaws.com/dev/telemetry`
+- **API Gateway URL**: `https://v7rtnig6sf.execute-api.us-east-1.amazonaws.com/dev/telemetry`
 - **Lambda Function**: `amazonia-monitor-lorawan-dev-uplinkProcessor`
 - **DynamoDB Table**: `EnvironmentalEvents` (creada automáticamente)
 
@@ -11,7 +11,7 @@
 ### Test Básico (Payload Normal)
 
 ```bash
-curl -X POST "https://zv4065j3ui.execute-api.us-east-1.amazonaws.com/dev/telemetry" \
+curl -X POST "https://v7rtnig6sf.execute-api.us-east-1.amazonaws.com/dev/telemetry" \
   -H "Content-Type: application/json" \
   -d '{
     "payload": "DC0139523C00",
@@ -44,7 +44,7 @@ curl -X POST "https://zv4065j3ui.execute-api.us-east-1.amazonaws.com/dev/telemet
 ### Test con Alerta de Fuego
 
 ```bash
-curl -X POST "https://zv4065j3ui.execute-api.us-east-1.amazonaws.com/dev/telemetry" \
+curl -X POST "https://v7rtnig6sf.execute-api.us-east-1.amazonaws.com/dev/telemetry" \
   -H "Content-Type: application/json" \
   -d '{
     "payload": "F4013A4A3C01",

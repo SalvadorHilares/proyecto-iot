@@ -2,7 +2,7 @@
 # Script de prueba para el API Gateway
 # Reemplaza <API_GATEWAY_URL> con la URL que obtienes después del deploy
 
-API_URL="https://zv4065j3ui.execute-api.us-east-1.amazonaws.com/dev/telemetry"
+API_URL="https://v7rtnig6sf.execute-api.us-east-1.amazonaws.com/dev/telemetry"
 
 # Ejemplo 1: Payload normal (sin alertas)
 echo "=== Test 1: Payload normal ==="

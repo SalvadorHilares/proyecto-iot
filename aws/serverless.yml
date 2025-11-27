@@ -23,9 +23,15 @@ functions:
       - http:
           path: telemetry
           method: post
-      - http:
-          path: telemetry
-          method: options
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
     environment:
       TABLE_NAME: ${self:custom.tableName}
       SNS_TOPIC_ARN: ${self:custom.snsTopicArn, ''}
@@ -39,9 +45,15 @@ functions:
       - http:
           path: telemetry
           method: get
-      - http:
-          path: telemetry
-          method: options
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
     environment:
       TABLE_NAME: ${self:custom.tableName}
 

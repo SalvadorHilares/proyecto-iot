@@ -231,5 +231,106 @@ curl -X POST "$API_URL" \
     "snr": 12
   }'
 
+echo -e "\n\n"
+
+# ============================================
+# PRUEBAS DEL ENDPOINT GET (Frontend)
+# ============================================
+
+echo "=========================================="
+echo "TESTING: Endpoint GET (Frontend)"
+echo "=========================================="
+echo ""
+
+# Ejemplo GET 1: Obtener últimos 10 registros (default)
+echo "=== GET Test 1: Últimos 10 registros (default) ==="
+curl -X GET "$API_URL" \
+  -H "Content-Type: application/json"
+
+echo -e "\n\n"
+
+# Ejemplo GET 2: Obtener últimos 5 registros
+echo "=== GET Test 2: Últimos 5 registros ==="
+curl -X GET "$API_URL?limit=5" \
+  -H "Content-Type: application/json"
+
+echo -e "\n\n"
+
+# Ejemplo GET 3: Obtener registros de un dispositivo específico
+echo "=== GET Test 3: Registros de SENSOR_001 ==="
+curl -X GET "$API_URL?devEui=SENSOR_001&limit=10" \
+  -H "Content-Type: application/json"
+
+echo -e "\n\n"
+
+# Ejemplo GET 4: Obtener registros de UNKNOWN (default)
+echo "=== GET Test 4: Registros de UNKNOWN ==="
+curl -X GET "$API_URL?devEui=UNKNOWN&limit=3" \
+  -H "Content-Type: application/json"
+
+echo -e "\n\n"
+
+# Ejemplo GET 5: Obtener con límite máximo (100)
+echo "=== GET Test 5: Límite máximo (100) ==="
+curl -X GET "$API_URL?limit=100" \
+  -H "Content-Type: application/json"
+
+echo -e "\n\n"
+
+# Ejemplo GET 6: Límite inválido (debe usar default)
+echo "=== GET Test 6: Límite inválido (debe usar default) ==="
+curl -X GET "$API_URL?limit=0" \
+  -H "Content-Type: application/json"
+
+echo -e "\n\n"
+
+# Ejemplo GET 7: Límite excesivo (debe limitar a 100)
+echo "=== GET Test 7: Límite excesivo (debe limitar a 100) ==="
+curl -X GET "$API_URL?limit=500" \
+  -H "Content-Type: application/json"
+
+echo -e "\n\n"
+
+# Ejemplo GET 8: Simulación de request desde frontend (con Origin header)
+echo "=== GET Test 8: Request desde frontend (con Origin) ==="
+curl -X GET "$API_URL?limit=10" \
+  -H "Content-Type: application/json" \
+  -H "Origin: http://localhost:3000"
+
+echo -e "\n\n"
+
+# Ejemplo GET 9: Preflight OPTIONS (CORS)
+echo "=== GET Test 9: Preflight OPTIONS (CORS) ==="
+curl -X OPTIONS "$API_URL" \
+  -H "Origin: http://localhost:3000" \
+  -H "Access-Control-Request-Method: GET" \
+  -H "Access-Control-Request-Headers: Content-Type" \
+  -v 2>&1 | grep -i "access-control"
+
+echo -e "\n\n"
+
+# Ejemplo GET 10: Request completo como lo haría el frontend
+echo "=== GET Test 10: Request completo (simulación frontend) ==="
+curl -X GET "$API_URL?devEui=UNKNOWN&limit=10" \
+  -H "Content-Type: application/json" \
+  -H "Origin: http://localhost:3000" \
+  -H "Referer: http://localhost:3000/dashboard" \
+  -v 2>&1 | head -20
+
+echo -e "\n\n"
+
+# Ejemplo GET 11: Verificar que los datos están ordenados (más recientes primero)
+echo "=== GET Test 11: Verificar orden (más recientes primero) ==="
+curl -X GET "$API_URL?limit=3" \
+  -H "Content-Type: application/json" \
+  | python3 -m json.tool 2>/dev/null | grep -A 5 "timestamp" || echo "Respuesta recibida"
+
+echo -e "\n\n"
+
+# Ejemplo GET 12: Dispositivo que no existe (debe retornar array vacío)
+echo "=== GET Test 12: Dispositivo inexistente ==="
+curl -X GET "$API_URL?devEui=NO_EXISTS&limit=10" \
+  -H "Content-Type: application/json"
+
 echo -e "\n"
 

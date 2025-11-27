@@ -58,10 +58,27 @@ const hexToBuffer = (hex) => {
 };
 
 exports.handler = async (event) => {
+  // CORS headers manuales
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Methods": "POST,OPTIONS",
+    "Access-Control-Max-Age": "86400"
+  };
+
+  // Manejar preflight OPTIONS
+  if (event.requestContext?.http?.method === "OPTIONS" || event.httpMethod === "OPTIONS") {
+    return {
+      statusCode: 200,
+      headers: corsHeaders,
+      body: "",
+    };
+  }
+
   if (!TABLE_NAME) {
     return {
       statusCode: 500,
-      headers: { "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
       body: JSON.stringify({ error: "TABLE_NAME env var is required" }),
     };
   }
@@ -72,7 +89,7 @@ exports.handler = async (event) => {
   } catch (error) {
     return {
       statusCode: 400,
-      headers: { "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
       body: JSON.stringify({ error: "Invalid JSON in request body" }),
     };
   }
@@ -80,7 +97,7 @@ exports.handler = async (event) => {
   if (!requestBody.payload) {
     return {
       statusCode: 400,
-      headers: { "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
       body: JSON.stringify({ error: "Missing 'payload' field in request body" }),
     };
   }
@@ -91,7 +108,7 @@ exports.handler = async (event) => {
   } catch (error) {
     return {
       statusCode: 400,
-      headers: { "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
       body: JSON.stringify({ error: `Invalid hex payload: ${error.message || error}` }),
     };
   }
@@ -150,7 +167,7 @@ exports.handler = async (event) => {
 
   return {
     statusCode: 200,
-    headers: { "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
     body: JSON.stringify({
       success: true,
       devEui,

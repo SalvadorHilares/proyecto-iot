@@ -32,55 +32,44 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "Invalid JSON" }) };
   }
 
-  // Verificamos que exista payload
+  // Verificamos payload
   if (!body.payload || !body.payload.data) {
     return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "Missing payload or data" }) };
   }
 
-  // 3. Extracción de datos (Ya vienen limpios desde Python)
-  const incoming = body.payload;       // El objeto completo
+  // 3. Extracción de datos
+  const incoming = body.payload;       
   const sensorType = incoming.sensor;  // "arduino" o "raspberry"
-  const data = incoming.data;          // { gas: 123, temp: 25... }
+  const data = incoming.data;          
   
-  // Usamos el timestamp de Python o el actual
   const timestamp = incoming.timestamp || new Date().toISOString();
-  // ID del dispositivo (puedes pasarlo desde Python o usar genérico)
   const devEui = body.device_id || "LORA_GATEWAY_01"; 
 
   // Claves de DynamoDB
   const pk = `DEV#${devEui}`;
-  const sk = `TS#${timestamp}`; // Cada dato es único por fecha
+  const sk = `TS#${timestamp}`; 
 
-  // 4. Preparar el ITEM para DynamoDB
-  // Inicializamos un objeto base
+  // 4. Objeto Base para DynamoDB
   let dbItem = {
     pk: { S: pk },
     sk: { S: sk },
     sensorType: { S: sensorType },
     timestamp: { S: timestamp },
-    // Metadata común
     snr: { N: (data.snr || 0).toString() } 
   };
 
   // 5. Lógica Específica por Sensor
-  let isFireEmergency = false;
+  let isEmergency = false;
   let messageSNS = "";
 
   if (sensorType === 'arduino') {
     // --- LÓGICA ARDUINO ---
-    
-    // Calculamos RiskScore aquí (o en Python, pero aquí es seguro)
-    // Formula aproximada basada en tus datos previos
-    const deltaGas = Math.max(0, (data.gas || 0) - 300);
-    const deltaTemp = Math.max(0, (data.temperatura || 0) - 26);
-    let riskScore = (2.5 * deltaGas) + (2.0 * deltaTemp);
-    
     dbItem = {
       ...dbItem,
       gas: { N: (data.gas || 0).toString() },
       temperature: { N: (data.temperatura || 0).toString() },
       humidity: { N: (data.humedad || 0).toString() },
-      riskScore: { N: riskScore.toFixed(2) },
+      // Flags booleanos
       flags: {
         M: {
           fire: { BOOL: data.fuego === 1 },
@@ -89,27 +78,30 @@ exports.handler = async (event) => {
       }
     };
 
-    // Detectar emergencia para SNS
+    // Detectar incendio
     if (data.fuego === 1) {
-      isFireEmergency = true;
+      isEmergency = true;
       messageSNS = `🔥 ALERTA DE INCENDIO (Arduino)\nGas: ${data.gas}\nTemp: ${data.temperatura}°C`;
     }
 
   } else if (sensorType === 'raspberry') {
     // --- LÓGICA RASPBERRY ---
-    
+    // Convertimos 0/1 a Boolean (0=False/Safe, 1=True/Danger)
+    const isDanger = (data.clase_detectada === 1);
+
     dbItem = {
       ...dbItem,
-      audioClass: { N: (data.clase_detectada || 0).toString() },
+      audioDanger: { BOOL: isDanger }, // Aquí guardamos el booleano
       audioConfidence: { N: (data.confianza || 0).toString() },
       audioDb: { N: (data.volumen_db || 0).toString() }
     };
 
-    // Si quieres alertas por sonido alto (ej. > 80dB)
-    /* if (data.volumen_db > 80) {
-       isFireEmergency = true;
-       messageSNS = `🔊 ALERTA SONORA (Raspberry)\nNivel: ${data.volumen_db} dB`;
-    } 
+    // Si quieres que el sonido 'Danger' también mande alerta SNS, descomenta esto:
+    /*
+    if (isDanger) {
+        isEmergency = true;
+        messageSNS = `🔊 ALERTA SONORA (Raspberry)\nNivel: ${data.volumen_db} dB`;
+    }
     */
   }
 
@@ -123,7 +115,7 @@ exports.handler = async (event) => {
     console.log(`✅ Item guardado: ${sensorType}`);
 
     // 7. Enviar Alerta SNS (Si aplica)
-    if (SNS_TOPIC_ARN && isFireEmergency) {
+    if (SNS_TOPIC_ARN && isEmergency) {
       await sns.send(new PublishCommand({
         TopicArn: SNS_TOPIC_ARN,
         Subject: `🚨 ALERTA - ${devEui}`,

@@ -7,58 +7,8 @@ const sns = new SNSClient({});
 const TABLE_NAME = process.env.TABLE_NAME || "";
 const SNS_TOPIC_ARN = process.env.SNS_TOPIC_ARN;
 
-const decodePayload = (buffer) => {
-  if (buffer.length < 6) {
-    throw new Error(`Payload too short: ${buffer.length}`);
-  }
-
-  const gas = buffer.readUInt16LE(0);
-  const tempHalfDegrees = buffer.readInt8(2);
-  const humidity = buffer.readUInt8(3);
-  const distanceCm = buffer.readUInt8(4) * 2;
-  const flagsByte = buffer.readUInt8(5);
-
-  const flags = {
-    fire: (flagsByte & 0b00000001) > 0,
-    logging: (flagsByte & 0b00000010) > 0,
-    presence: (flagsByte & 0b00000100) > 0,
-  };
-
-  // Same risk score logic as Arduino (approximation)
-  const baseGas = 300; // adjust based on calibration
-  const baseTemp = 26;
-  const baseHum = 85;
-
-  const deltaGas = Math.max(0, gas - baseGas);
-  const deltaTemp = Math.max(0, tempHalfDegrees / 2 - baseTemp);
-  const deltaHum = Math.max(0, baseHum - humidity);
-  let riskScore = 2.5 * deltaGas + 2.0 * deltaTemp + 1.0 * deltaHum;
-  if (deltaTemp > 2 && deltaHum > 5) {
-    riskScore += 20;
-  }
-
-  return {
-    gas,
-    temperature: tempHalfDegrees / 2,
-    humidity,
-    distanceCm,
-    flags,
-    riskScore: Number(riskScore.toFixed(2)),
-  };
-};
-
-// Helper to convert hex string to Buffer
-const hexToBuffer = (hex) => {
-  // Remove any whitespace or separators
-  const cleanHex = hex.replace(/\s+/g, "").toUpperCase();
-  if (cleanHex.length % 2 !== 0) {
-    throw new Error(`Invalid hex string length: ${cleanHex.length}`);
-  }
-  return Buffer.from(cleanHex, "hex");
-};
-
 exports.handler = async (event) => {
-  // CORS headers manuales
+  // 1. Configuración CORS
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
@@ -66,114 +16,134 @@ exports.handler = async (event) => {
     "Access-Control-Max-Age": "86400"
   };
 
-  // Manejar preflight OPTIONS
   if (event.requestContext?.http?.method === "OPTIONS" || event.httpMethod === "OPTIONS") {
-    return {
-      statusCode: 200,
-      headers: corsHeaders,
-      body: "",
-    };
+    return { statusCode: 200, headers: corsHeaders, body: "" };
   }
 
   if (!TABLE_NAME) {
-    return {
-      statusCode: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "TABLE_NAME env var is required" }),
-    };
+    return { statusCode: 500, body: JSON.stringify({ error: "TABLE_NAME missing" }) };
   }
 
-  let requestBody;
+  // 2. Parseo del Body
+  let body;
   try {
-    requestBody = JSON.parse(event.body);
+    body = JSON.parse(event.body);
   } catch (error) {
-    return {
-      statusCode: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "Invalid JSON in request body" }),
-    };
+    return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "Invalid JSON" }) };
   }
 
-  if (!requestBody.payload) {
-    return {
-      statusCode: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "Missing 'payload' field in request body" }),
-    };
+  // Verificamos que exista payload
+  if (!body.payload || !body.payload.data) {
+    return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "Missing payload or data" }) };
   }
 
-  let payloadBuffer;
-  try {
-    payloadBuffer = hexToBuffer(requestBody.payload);
-  } catch (error) {
-    return {
-      statusCode: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({ error: `Invalid hex payload: ${error.message || error}` }),
-    };
-  }
+  // 3. Extracción de datos (Ya vienen limpios desde Python)
+  const incoming = body.payload;       // El objeto completo
+  const sensorType = incoming.sensor;  // "arduino" o "raspberry"
+  const data = incoming.data;          // { gas: 123, temp: 25... }
+  
+  // Usamos el timestamp de Python o el actual
+  const timestamp = incoming.timestamp || new Date().toISOString();
+  // ID del dispositivo (puedes pasarlo desde Python o usar genérico)
+  const devEui = body.device_id || "LORA_GATEWAY_01"; 
 
-  const decoded = decodePayload(payloadBuffer);
-  const devEui = requestBody.devEui || "UNKNOWN";
-
-  const timestamp = new Date().toISOString();
+  // Claves de DynamoDB
   const pk = `DEV#${devEui}`;
-  const sk = `TS#${timestamp}`;
+  const sk = `TS#${timestamp}`; // Cada dato es único por fecha
 
-  const putCommand = new PutItemCommand({
-    TableName: TABLE_NAME,
-    Item: {
-      pk: { S: pk },
-      sk: { S: sk },
-      gas: { N: decoded.gas.toString() },
-      temperature: { N: decoded.temperature.toString() },
-      humidity: { N: decoded.humidity.toString() },
-      distanceCm: { N: decoded.distanceCm.toString() },
-      riskScore: { N: decoded.riskScore.toString() },
+  // 4. Preparar el ITEM para DynamoDB
+  // Inicializamos un objeto base
+  let dbItem = {
+    pk: { S: pk },
+    sk: { S: sk },
+    sensorType: { S: sensorType },
+    timestamp: { S: timestamp },
+    // Metadata común
+    snr: { N: (data.snr || 0).toString() } 
+  };
+
+  // 5. Lógica Específica por Sensor
+  let isFireEmergency = false;
+  let messageSNS = "";
+
+  if (sensorType === 'arduino') {
+    // --- LÓGICA ARDUINO ---
+    
+    // Calculamos RiskScore aquí (o en Python, pero aquí es seguro)
+    // Formula aproximada basada en tus datos previos
+    const deltaGas = Math.max(0, (data.gas || 0) - 300);
+    const deltaTemp = Math.max(0, (data.temperatura || 0) - 26);
+    let riskScore = (2.5 * deltaGas) + (2.0 * deltaTemp);
+    
+    dbItem = {
+      ...dbItem,
+      gas: { N: (data.gas || 0).toString() },
+      temperature: { N: (data.temperatura || 0).toString() },
+      humidity: { N: (data.humedad || 0).toString() },
+      riskScore: { N: riskScore.toFixed(2) },
       flags: {
         M: {
-          fire: { BOOL: decoded.flags.fire },
-          logging: { BOOL: decoded.flags.logging },
-          presence: { BOOL: decoded.flags.presence },
-        },
-      },
-      metadata: {
-        M: {
-          devEui: { S: devEui },
-          rssi: { N: ((requestBody.rssi || 0)).toString() },
-          snr: { N: ((requestBody.snr || 0)).toString() },
-          source: { S: "P2P" }, // Indicates this came from P2P, not LoRaWAN
-        },
-      },
-    },
-  });
+          fire: { BOOL: data.fuego === 1 },
+          presence: { BOOL: data.presencia === 1 }
+        }
+      }
+    };
 
-  await ddb.send(putCommand);
+    // Detectar emergencia para SNS
+    if (data.fuego === 1) {
+      isFireEmergency = true;
+      messageSNS = `🔥 ALERTA DE INCENDIO (Arduino)\nGas: ${data.gas}\nTemp: ${data.temperatura}°C`;
+    }
 
-  if (SNS_TOPIC_ARN && decoded.flags.fire) {
-    const message = `🔥 Alerta crítica detectada\n` +
-      `Dispositivo: ${devEui}\n` +
-      `Gas: ${decoded.gas}\n` +
-      `Temp: ${decoded.temperature}°C\n` +
-      `Humedad: ${decoded.humidity}%\n` +
-      `RiskScore: ${decoded.riskScore}`;
+  } else if (sensorType === 'raspberry') {
+    // --- LÓGICA RASPBERRY ---
+    
+    dbItem = {
+      ...dbItem,
+      audioClass: { N: (data.clase_detectada || 0).toString() },
+      audioConfidence: { N: (data.confianza || 0).toString() },
+      audioDb: { N: (data.volumen_db || 0).toString() }
+    };
 
-    await sns.send(new PublishCommand({
-      TopicArn: SNS_TOPIC_ARN,
-      Subject: `🔥 Alerta de incendio - ${devEui}`,
-      Message: message,
-    }));
+    // Si quieres alertas por sonido alto (ej. > 80dB)
+    /* if (data.volumen_db > 80) {
+       isFireEmergency = true;
+       messageSNS = `🔊 ALERTA SONORA (Raspberry)\nNivel: ${data.volumen_db} dB`;
+    } 
+    */
   }
 
-  return {
-    statusCode: 200,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      success: true,
-      devEui,
-      timestamp,
-      decoded,
-    }),
-  };
-};
+  // 6. Guardar en DynamoDB
+  try {
+    const putCommand = new PutItemCommand({
+      TableName: TABLE_NAME,
+      Item: dbItem,
+    });
+    await ddb.send(putCommand);
+    console.log(`✅ Item guardado: ${sensorType}`);
 
+    // 7. Enviar Alerta SNS (Si aplica)
+    if (SNS_TOPIC_ARN && isFireEmergency) {
+      await sns.send(new PublishCommand({
+        TopicArn: SNS_TOPIC_ARN,
+        Subject: `🚨 ALERTA - ${devEui}`,
+        Message: messageSNS,
+      }));
+      console.log("✅ Alerta SNS enviada");
+    }
+
+    return {
+      statusCode: 200,
+      headers: corsHeaders,
+      body: JSON.stringify({ success: true, id: sk })
+    };
+
+  } catch (err) {
+    console.error("Error DB/SNS:", err);
+    return {
+      statusCode: 500,
+      headers: corsHeaders,
+      body: JSON.stringify({ error: err.message })
+    };
+  }
+};

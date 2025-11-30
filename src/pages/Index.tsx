@@ -31,7 +31,6 @@ const Index = () => {
   const [warnings, setWarnings] = useState<any[]>([]);
   const [alertCount, setAlertCount] = useState(0);
   const [highlightAlertId, setHighlightAlertId] = useState<string | undefined>(undefined);
-  const [allAlerts, setAllAlerts] = useState<any[]>([]); // Todas las alertas generadas (para AlertsPanel)
   const [savedAlertIds, setSavedAlertIds] = useState<Set<string>>(new Set()); // IDs de alertas ya guardadas en DynamoDB
   const [proximityWarningShown, setProximityWarningShown] = useState(false); // Para rastrear si ya se mostró la advertencia de proximidad
   
@@ -422,21 +421,6 @@ const Index = () => {
           timestamp: new Date(),
         });
       }
-
-      // Guardar todas las alertas para el panel de alertas
-      setAllAlerts(prev => {
-        // Combinar nuevas alertas con las existentes, evitando duplicados
-        const existingIds = new Set(prev.map(a => a.id));
-        const newAlerts = alerts.filter(a => !existingIds.has(a.id));
-        
-        // Actualizar alertas existentes si cambian los valores
-        const updatedAlerts = prev.map(existing => {
-          const updated = alerts.find(a => a.id === existing.id);
-          return updated || existing;
-        });
-        
-        return [...updatedAlerts, ...newAlerts];
-      });
 
       // Procesar alertas críticas y guardar solo si no se han guardado antes
       alerts.forEach(async (alert) => {

@@ -29,4 +29,4 @@ dist-ssr
 .env.production
 
 node_modules
-package-lock.json
+# package-lock.json - Necesario para AWS Amplify

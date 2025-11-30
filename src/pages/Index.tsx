@@ -20,7 +20,8 @@ const Index = () => {
     sound: { value: 45, unit: "dB", status: "normal", trend: "down" },
     proximity: { value: "Activo", status: "alert", detections: 3 },
     fire: { detected: false }, // Flag de fuego del Arduino
-    audioConfidence: 0 // Confianza del modelo ML (0-1)
+    audioConfidence: 0, // Confianza del modelo ML (0-1)
+    audioDanger: false // Flag de peligro del modelo ML
   });
 
   // Estados para alertas y notificaciones

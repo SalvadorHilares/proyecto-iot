@@ -75,7 +75,7 @@ export const MessagingPanel = () => {
     {
       id: "1",
       sender: "Carlos Mendoza",
-      content: "Confirmado, el sensor infrarrojo en B3 detectó movimiento. Me dirijo al área.",
+      content: "Confirmado, el sensor de proximidad en B3 detectó presencia. Me dirijo al área.",
       timestamp: "10:45 AM",
       isOwn: false
     },

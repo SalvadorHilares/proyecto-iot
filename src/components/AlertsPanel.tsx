@@ -25,23 +25,24 @@ interface Alert {
 
 interface AlertsPanelProps {
   highlightAlertId?: string;
+  alerts?: Alert[]; // Alertas desde el componente padre
 }
 
-export const AlertsPanel = ({ highlightAlertId }: AlertsPanelProps = {}) => {
-  const [alerts, setAlerts] = useState<Alert[]>([
+export const AlertsPanel = ({ highlightAlertId, alerts: externalAlerts }: AlertsPanelProps = {}) => {
+  const [internalAlerts, setInternalAlerts] = useState<Alert[]>([
     {
       id: "1",
-      title: "Detección de Movimiento Infrarrojo",
+      title: "Detección de Proximidad",
       description: "Actividad detectada en zona de alta protección",
       type: "critical",
       timestamp: "Hace 5 minutos",
       icon: Radio,
       location: "Sector B3 - Zona Norte",
-      sensor: "Sensor Infrarrojo PIR",
+      sensor: "Sensor de Proximidad",
       currentValue: "Activo",
       threshold: "Sin actividad",
       unit: "",
-      reason: "El sensor infrarrojo ha detectado movimiento en una zona clasificada como de alta protección. Esta área está designada para la conservación de especies en peligro y no debería tener actividad humana.",
+      reason: "El sensor de proximidad ha detectado presencia en una zona clasificada como de alta protección. Esta área está designada para la conservación de especies en peligro y no debería tener actividad humana.",
       recommendation: "Enviar equipo de guardabosques para inspección inmediata. Revisar grabaciones de cámaras de seguridad si están disponibles. Determinar si es fauna local o presencia humana no autorizada."
     },
     {
@@ -70,10 +71,10 @@ export const AlertsPanel = ({ highlightAlertId }: AlertsPanelProps = {}) => {
       location: "Sector A5 - Zona Este",
       sensor: "Sensor MQ-135 - Calidad de Aire",
       currentValue: 68,
-      threshold: 50,
+      threshold: 200,
       unit: "ppm",
-      exceedPercentage: 36,
-      reason: "El sensor de calidad de aire ha detectado 68 ppm de partículas, superando el umbral seguro de 50 ppm en un 36%. Esto indica la presencia de humo o contaminación del aire que puede provenir de quemas cercanas, incendios forestales o actividad industrial próxima.",
+      exceedPercentage: -66,
+      reason: "El sensor de calidad de aire ha detectado 68 ppm de partículas. Aunque está por debajo del umbral crítico de 200 ppm, este nivel puede indicar presencia de humo o contaminación del aire que puede provenir de quemas cercanas, incendios forestales o actividad industrial próxima.",
       recommendation: "Identificar la fuente del humo. Revisar reportes de quemas controladas en áreas circundantes. Activar monitoreo continuo y alertar a comunidades cercanas sobre posible afectación de calidad del aire."
     },
     {
@@ -86,10 +87,10 @@ export const AlertsPanel = ({ highlightAlertId }: AlertsPanelProps = {}) => {
       location: "Zona Central",
       sensor: "Sensor Acústico dB",
       currentValue: 78,
-      threshold: 60,
+      threshold: 80,
       unit: "dB",
-      exceedPercentage: 30,
-      reason: "Se han detectado 78 dB de sonido, superando el umbral normal de 60 dB en un 30%. En ecosistemas de la Amazonía, niveles superiores a 60 dB pueden indicar maquinaria pesada, tala ilegal o perturbación significativa de fauna. El ruido excesivo afecta los patrones de comunicación y comportamiento de animales.",
+      exceedPercentage: -2.5,
+      reason: "Se han detectado 78 dB de sonido, ligeramente por debajo del umbral crítico de 80 dB. En ecosistemas de la Amazonía, niveles superiores a 60 dB pueden indicar maquinaria pesada, tala ilegal o perturbación significativa de fauna. El ruido excesivo afecta los patrones de comunicación y comportamiento de animales.",
       recommendation: "Investigar la fuente del ruido. Verificar si hay actividad de tala o minería ilegal. Coordinar con autoridades locales para patrullaje en el área. Documentar fauna afectada."
     },
     {
@@ -110,8 +111,16 @@ export const AlertsPanel = ({ highlightAlertId }: AlertsPanelProps = {}) => {
     }
   ]);
 
+  // Usar alertas externas si están disponibles, sino usar las internas (mock)
+  const alerts = externalAlerts && externalAlerts.length > 0 ? externalAlerts : internalAlerts;
+
   const resolveAlert = (id: string) => {
-    setAlerts(alerts.filter(alert => alert.id !== id));
+    if (externalAlerts) {
+      // Si hay alertas externas, no podemos resolverlas aquí (se manejan en el padre)
+      console.log("Resolver alerta:", id);
+      return;
+    }
+    setInternalAlerts(internalAlerts.filter(alert => alert.id !== id));
   };
 
   const getAlertColor = (type: string) => {

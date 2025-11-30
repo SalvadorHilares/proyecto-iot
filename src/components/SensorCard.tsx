@@ -8,6 +8,7 @@ interface SensorData {
   status: string;
   trend?: string;
   detections?: number;
+  confidence?: number; // Confianza del modelo ML (0-1)
 }
 
 interface SensorCardProps {
@@ -18,7 +19,7 @@ interface SensorCardProps {
   humidity?: SensorData;
   smoke?: SensorData;
   sound?: SensorData;
-  infrared?: SensorData;
+  proximity?: SensorData;
   status?: string;
 }
 
@@ -30,7 +31,7 @@ export const SensorCard = ({
   humidity,
   smoke,
   sound,
-  infrared,
+  proximity,
   status = "normal"
 }: SensorCardProps) => {
   const getStatusColor = (status: string) => {
@@ -115,10 +116,10 @@ export const SensorCard = ({
             <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
               <div
                 className="bg-gradient-to-r from-primary via-warning to-destructive h-full transition-all duration-500 rounded-full"
-                style={{ width: `${getProgressPercentage(Number(smoke.value), 50)}%` }}
+                style={{ width: `${Math.min(getProgressPercentage(Number(smoke.value), 200), 100)}%` }}
               />
             </div>
-            <p className="text-xs text-muted-foreground">Umbral seguro: &lt; 50 ppm</p>
+            <p className="text-xs text-muted-foreground">Umbral seguro: &lt; 200 ppm</p>
           </div>
         )}
 
@@ -134,21 +135,32 @@ export const SensorCard = ({
                 style={{ width: `${getProgressPercentage(Number(sound.value), 100)}%` }}
               />
             </div>
+            {sound.confidence !== undefined && sound.confidence > 0 && (
+              <div className="flex items-center justify-between p-2 bg-muted/50 rounded-lg border">
+                <span className="text-xs text-muted-foreground">Confianza del Modelo ML:</span>
+                <Badge 
+                  variant={sound.confidence > 0.7 ? "default" : sound.confidence > 0.5 ? "secondary" : "outline"}
+                  className="text-xs"
+                >
+                  {(sound.confidence * 100).toFixed(1)}%
+                </Badge>
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">Ambiente normal: 40-60 dB</p>
           </div>
         )}
 
-        {infrared && (
+        {proximity && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Estado</span>
-              <span className="text-2xl font-bold">{infrared.value}</span>
+              <span className="text-2xl font-bold">{proximity.value}</span>
             </div>
-            {infrared.detections !== undefined && (
+            {proximity.detections !== undefined && (
               <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
                 <span className="text-sm text-muted-foreground">Detecciones hoy</span>
                 <Badge variant="destructive" className="text-lg px-3 py-1">
-                  {infrared.detections}
+                  {proximity.detections}
                 </Badge>
               </div>
             )}

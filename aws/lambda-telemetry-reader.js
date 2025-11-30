@@ -37,79 +37,107 @@ exports.handler = async (event) => {
   try {
     // Obtener parámetros de query string (compatible con ambos formatos de API Gateway)
     const queryParams = event.queryStringParameters || {};
-    const devEui = queryParams.devEui || "UNKNOWN";
+    const devEui = queryParams.devEui || "LORA_GATEWAY_01";
     const limit = parseInt(queryParams.limit || "10", 10);
     const startTime = queryParams.startTime; // ISO timestamp opcional
+    const sensorType = queryParams.sensorType; // "arduino" o "raspberry" (opcional)
 
     // Validar limit
     const maxLimit = 100;
     const validLimit = Math.min(Math.max(1, limit), maxLimit);
 
     // Construir la query
-    const pk = `DEV#${devEui}`;
+    const pk = devEui.startsWith("DEV#") ? devEui : `DEV#${devEui}`;
     
     let queryCommand;
+    const expressionAttributeValues = {
+      ":pk": { S: pk },
+    };
+
+    // Construir KeyConditionExpression
+    let keyConditionExpression = "pk = :pk";
     
     if (startTime) {
-      // Query con rango de tiempo específico
-      queryCommand = new QueryCommand({
-        TableName: TABLE_NAME,
-        KeyConditionExpression: "pk = :pk AND sk >= :startTime",
-        ExpressionAttributeValues: {
-          ":pk": { S: pk },
-          ":startTime": { S: `TS#${startTime}` },
-        },
-        Limit: validLimit,
-        ScanIndexForward: false, // Orden descendente (más recientes primero)
-      });
-    } else {
-      // Query para obtener los últimos N registros
-      queryCommand = new QueryCommand({
-        TableName: TABLE_NAME,
-        KeyConditionExpression: "pk = :pk",
-        ExpressionAttributeValues: {
-          ":pk": { S: pk },
-        },
-        Limit: validLimit,
-        ScanIndexForward: false, // Orden descendente (más recientes primero)
-      });
+      keyConditionExpression += " AND sk >= :startTime";
+      expressionAttributeValues[":startTime"] = { S: `TS#${startTime}` };
     }
+
+    // Construir FilterExpression para sensorType si se especifica
+    let filterExpression = null;
+    if (sensorType) {
+      filterExpression = "sensorType = :sensorType";
+      expressionAttributeValues[":sensorType"] = { S: sensorType };
+    }
+    
+    queryCommand = new QueryCommand({
+      TableName: TABLE_NAME,
+      KeyConditionExpression: keyConditionExpression,
+      ExpressionAttributeValues: expressionAttributeValues,
+      ...(filterExpression && { FilterExpression: filterExpression }),
+      Limit: validLimit,
+      ScanIndexForward: false, // Orden descendente (más recientes primero)
+    });
 
     const result = await ddb.send(queryCommand);
 
     // Convertir items de DynamoDB a formato JSON normal
     const items = (result.Items || []).map((item) => {
-      const decoded = {
-        gas: parseFloat(item.gas?.N || "0"),
-        temperature: parseFloat(item.temperature?.N || "0"),
-        humidity: parseFloat(item.humidity?.N || "0"),
-        distanceCm: parseFloat(item.distanceCm?.N || "0"),
-        riskScore: parseFloat(item.riskScore?.N || "0"),
-        flags: {
-          fire: item.flags?.M?.fire?.BOOL || false,
-          logging: item.flags?.M?.logging?.BOOL || false,
-          presence: item.flags?.M?.presence?.BOOL || false,
-        },
-      };
-
-      // Extraer timestamp del sk
+      // Extraer campos comunes
       const sk = item.sk?.S || "";
       const timestamp = sk.replace("TS#", "");
-
-      // Extraer metadata
-      const metadata = {
-        devEui: item.metadata?.M?.devEui?.S || "UNKNOWN",
-        rssi: parseFloat(item.metadata?.M?.rssi?.N || "0"),
-        snr: parseFloat(item.metadata?.M?.snr?.N || "0"),
-        source: item.metadata?.M?.source?.S || "P2P",
+      const itemSensorType = item.sensorType?.S || "unknown";
+      const snr = parseFloat(item.snr?.N || "0");
+      
+      // Base item
+      const baseItem = {
+        pk: item.pk?.S || "",
+        sk: sk,
+        sensorType: itemSensorType,
+        timestamp: item.timestamp?.S || timestamp,
+        snr: snr,
       };
 
-      return {
-        timestamp,
-        devEui: metadata.devEui,
-        decoded,
-        metadata,
-      };
+      // Decodificar según el tipo de sensor
+      if (itemSensorType === "arduino") {
+        // Campos específicos de Arduino
+        return {
+          ...baseItem,
+          gas: parseFloat(item.gas?.N || "0"),
+          temperature: parseFloat(item.temperature?.N || "0"),
+          humidity: parseFloat(item.humidity?.N || "0"),
+          flags: {
+            fire: item.flags?.M?.fire?.BOOL || false,
+            presence: item.flags?.M?.presence?.BOOL || false,
+          },
+        };
+      } else if (itemSensorType === "raspberry") {
+        // Campos específicos de Raspberry
+        return {
+          ...baseItem,
+          audioConfidence: parseFloat(item.audioConfidence?.N || "0"),
+          audioDanger: item.audioDanger?.BOOL || false,
+          audioDb: parseFloat(item.audioDb?.N || "0"),
+        };
+      } else {
+        // Tipo desconocido - retornar todos los campos disponibles
+        const unknownItem = { ...baseItem };
+        
+        // Intentar extraer campos comunes que puedan existir
+        if (item.gas) unknownItem.gas = parseFloat(item.gas.N || "0");
+        if (item.temperature) unknownItem.temperature = parseFloat(item.temperature.N || "0");
+        if (item.humidity) unknownItem.humidity = parseFloat(item.humidity.N || "0");
+        if (item.audioConfidence) unknownItem.audioConfidence = parseFloat(item.audioConfidence.N || "0");
+        if (item.audioDanger) unknownItem.audioDanger = item.audioDanger.BOOL || false;
+        if (item.audioDb) unknownItem.audioDb = parseFloat(item.audioDb.N || "0");
+        if (item.flags) {
+          unknownItem.flags = {
+            fire: item.flags.M?.fire?.BOOL || false,
+            presence: item.flags.M?.presence?.BOOL || false,
+          };
+        }
+        
+        return unknownItem;
+      }
     });
 
     return {
@@ -118,7 +146,8 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         success: true,
         count: items.length,
-        devEui,
+        devEui: devEui.replace("DEV#", ""),
+        sensorType: sensorType || "all",
         items,
       }),
     };

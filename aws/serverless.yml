@@ -11,6 +11,7 @@ provider:
   environment:
     TABLE_NAME: ${self:custom.tableName}
     SNS_TOPIC_ARN: ${self:custom.snsTopicArn, ''}
+    ALERTS_TABLE_NAME: ${self:custom.alertsTableName}
 
 functions:
   uplinkProcessor:
@@ -56,6 +57,72 @@ functions:
             allowCredentials: false
     environment:
       TABLE_NAME: ${self:custom.tableName}
+  
+  createAlert:
+    handler: lambda-create-alert.handler
+    description: Creates a new alert in DynamoDB
+    timeout: 10
+    memorySize: 256
+    runtime: nodejs18.x
+    events:
+      - http:
+          path: alerts
+          method: post
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
+    environment:
+      ALERTS_TABLE_NAME: ${self:custom.alertsTableName}
+  
+  getAlerts:
+    handler: lambda-get-alerts.handler
+    description: Retrieves alerts from DynamoDB with filters
+    timeout: 10
+    memorySize: 256
+    runtime: nodejs18.x
+    events:
+      - http:
+          path: alerts
+          method: get
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
+    environment:
+      ALERTS_TABLE_NAME: ${self:custom.alertsTableName}
+  
+  resolveAlert:
+    handler: lambda-resolve-alert.handler
+    description: Marks an alert as resolved
+    timeout: 10
+    memorySize: 256
+    runtime: nodejs18.x
+    events:
+      - http:
+          path: alerts/{alertId}/resolve
+          method: put
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
+    environment:
+      ALERTS_TABLE_NAME: ${self:custom.alertsTableName}
 
 resources:
   Resources:
@@ -74,9 +141,47 @@ resources:
             KeyType: HASH
           - AttributeName: sk
             KeyType: RANGE
+    
+    AlertsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.alertsTableName}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: pk
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+          - AttributeName: status
+            AttributeType: S
+          - AttributeName: sensorType
+            AttributeType: S
+        KeySchema:
+          - AttributeName: pk
+            KeyType: HASH
+          - AttributeName: sk
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: GSI1-Status-Timestamp
+            KeySchema:
+              - AttributeName: status
+                KeyType: HASH
+              - AttributeName: sk
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: GSI2-SensorType-Timestamp
+            KeySchema:
+              - AttributeName: sensorType
+                KeyType: HASH
+              - AttributeName: sk
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
 
 custom:
   tableName: ${opt:table, 'EnvironmentalEvents'}
+  alertsTableName: ${opt:alertsTable, 'Alerts'}
   snsTopicArn: ${opt:sns, ''}
 
 package:
@@ -96,5 +201,8 @@ package:
     - '!package*.json'
     - 'lambda-uplink-processor.js'
     - 'lambda-telemetry-reader.js'
+    - 'lambda-create-alert.js'
+    - 'lambda-get-alerts.js'
+    - 'lambda-resolve-alert.js'
     - 'node_modules/**'
 

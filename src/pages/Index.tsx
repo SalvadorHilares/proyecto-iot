@@ -9,6 +9,7 @@ import { MessagingPanel } from "@/components/MessagingPanel";
 import { CriticalAlertModal } from "@/components/CriticalAlertModal";
 import { WarningBanner } from "@/components/WarningBanner";
 import { getLatestSensorData, getAllSensorData, DynamoDBItem } from "@/services/api";
+import { createAlert } from "@/services/alerts";
 import { useState, useEffect } from "react";
 
 const Index = () => {
@@ -31,6 +32,8 @@ const Index = () => {
   const [alertCount, setAlertCount] = useState(0);
   const [highlightAlertId, setHighlightAlertId] = useState<string | undefined>(undefined);
   const [allAlerts, setAllAlerts] = useState<any[]>([]); // Todas las alertas generadas (para AlertsPanel)
+  const [savedAlertIds, setSavedAlertIds] = useState<Set<string>>(new Set()); // IDs de alertas ya guardadas en DynamoDB
+  const [proximityWarningShown, setProximityWarningShown] = useState(false); // Para rastrear si ya se mostró la advertencia de proximidad
   
   // Estados para conexión y actualización
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected" | "error">("disconnected");
@@ -283,29 +286,35 @@ const Index = () => {
     const checkAlerts = () => {
       const alerts: any[] = [];
       
-      // Notificación de presencia (proximidad) - Solo notificación pequeña, no alerta crítica
+      // Notificación de presencia (proximidad) - Solo mostrar cuando cambia de inactivo a activo
       if (sensorData.proximity.value === "Activo" && sensorData.proximity.detections > 0) {
-        // Verificar si ya existe una advertencia de proximidad para evitar duplicados
-        setWarnings(prev => {
-          const hasProximityWarning = prev.some(w => w.id?.includes('proximity'));
-          if (!hasProximityWarning) {
-            setAlertCount(count => count + 1);
-            return [...prev, {
-              id: `proximity-warning-${Date.now()}`,
-              message: "Presencia detectada en zona protegida",
-              sensor: "Sensor de Proximidad",
-              value: "Detección activa",
-              timestamp: new Date(),
-            }];
-          }
-          return prev;
-        });
+        // Solo mostrar la advertencia si NO se ha mostrado antes (cambio de estado)
+        if (!proximityWarningShown) {
+          setProximityWarningShown(true);
+          setWarnings(prev => {
+            const hasProximityWarning = prev.some(w => w.id?.includes('proximity'));
+            if (!hasProximityWarning) {
+              // No incrementar alertCount para alertas de proximidad (solo notificación)
+              return [...prev, {
+                id: `proximity-warning-${Date.now()}`,
+                message: "Presencia detectada en zona protegida",
+                sensor: "Sensor de Proximidad",
+                value: "Detección activa",
+                timestamp: new Date(),
+              }];
+            }
+            return prev;
+          });
+        }
       } else {
-        // Si ya no hay detección, remover la advertencia de proximidad
+        // Si ya no hay detección, resetear el flag y remover la advertencia
+        if (proximityWarningShown) {
+          setProximityWarningShown(false);
+        }
         setWarnings(prev => {
           const proximityWarnings = prev.filter(w => w.id?.includes('proximity'));
           if (proximityWarnings.length > 0) {
-            setAlertCount(count => Math.max(0, count - proximityWarnings.length));
+            // No decrementar alertCount para alertas de proximidad (solo notificación)
             return prev.filter(w => !w.id?.includes('proximity'));
           }
           return prev;
@@ -314,8 +323,9 @@ const Index = () => {
 
       // Alerta de temperatura crítica
       if (sensorData.temperature.value > 35) {
+        const alertId = `temp-alert-critical`;
         alerts.push({
-          id: `temp-alert-${Date.now()}`,
+          id: alertId,
           title: "🔥 Temperatura Crítica Detectada",
           description: "Sensor de temperatura excede límites seguros",
           sensor: "Sensor DHT22 - Temperatura",
@@ -332,8 +342,9 @@ const Index = () => {
 
       // Alerta de FUEGO detectado (flag del Arduino) - PRIORITARIA
       if (sensorData.fire?.detected) {
+        const alertId = `fire-alert-critical`;
         alerts.push({
-          id: `fire-alert-${Date.now()}`,
+          id: alertId,
           title: "🔥 INCENDIO DETECTADO",
           description: "Sensor de fuego activado - EMERGENCIA",
           sensor: "Sensor de Fuego - Arduino",
@@ -350,8 +361,9 @@ const Index = () => {
 
       // Alerta de humo/gas (solo si NO hay fuego detectado)
       if (!sensorData.fire?.detected && sensorData.smoke.value > 200) {
+        const alertId = `smoke-alert-critical`;
         alerts.push({
-          id: `smoke-alert-${Date.now()}`,
+          id: alertId,
           title: "💨 Calidad de Aire Crítica",
           description: "Concentración peligrosa de partículas",
           sensor: "Sensor MQ-135 - Calidad de Aire",
@@ -372,9 +384,10 @@ const Index = () => {
       if (sensorData.audioDanger) {
         const confidence = sensorData.audioConfidence || 0;
         const confidencePercent = (confidence * 100).toFixed(1);
+        const alertId = `sound-ml-alert-${confidence > 0.7 ? 'critical' : 'warning'}`;
         
         alerts.push({
-          id: `sound-alert-${Date.now()}`,
+          id: alertId,
           title: "🔊 Sonido Peligroso Detectado",
           description: `Modelo ML detectó sonido peligroso (Confianza: ${confidencePercent}%)`,
           sensor: "Sensor Acústico - Raspberry (ML)",
@@ -393,8 +406,9 @@ const Index = () => {
 
       // Alerta de nivel sonoro alto (basado solo en dB, sin ML)
       if (sensorData.sound.value > 80 && !sensorData.audioDanger) {
+        const alertId = `sound-level-alert-warning`;
         alerts.push({
-          id: `sound-level-alert-${Date.now()}`,
+          id: alertId,
           title: "🔊 Nivel Sonoro Crítico",
           description: "Nivel de sonido excede umbral seguro",
           sensor: "Sensor Acústico - Raspberry",
@@ -424,20 +438,107 @@ const Index = () => {
         return [...updatedAlerts, ...newAlerts];
       });
 
-      // Procesar alertas críticas
-      alerts.forEach(alert => {
+      // Procesar alertas críticas y guardar solo si no se han guardado antes
+      alerts.forEach(async (alert) => {
+        // Verificar si esta alerta ya fue guardada
+        if (savedAlertIds.has(alert.id)) {
+          // Si ya existe, solo actualizar el estado local pero no guardar de nuevo
+          if (alert.severity === "critical") {
+            setCriticalAlert(alert);
+            setShowCriticalModal(true);
+          } else if (alert.severity === "warning") {
+            setWarnings(prev => {
+              const exists = prev.some(w => w.id === alert.id);
+              if (!exists) {
+                return [...prev, {
+                  id: alert.id,
+                  message: alert.description,
+                  sensor: alert.sensor,
+                  value: `${alert.currentValue}${alert.unit}`,
+                  timestamp: new Date(),
+                }];
+              }
+              return prev;
+            });
+          }
+          return; // No guardar de nuevo
+        }
+
+        // Si es una nueva alerta, guardarla
         if (alert.severity === "critical") {
+          // Guardar en DynamoDB
+          try {
+            await createAlert({
+              alertId: alert.id,
+              type: alert.severity,
+              status: "active",
+              title: alert.title,
+              description: alert.description,
+              sensor: alert.sensor,
+              sensorType: alert.sensor.includes("Arduino") || alert.sensor.includes("DHT22") || alert.sensor.includes("MQ-135") 
+                ? "arduino" 
+                : "raspberry",
+              currentValue: alert.currentValue,
+              threshold: alert.threshold,
+              unit: alert.unit,
+              reason: alert.reason,
+              recommendation: alert.recommendation,
+              timestamp: new Date().toISOString(),
+              devEui: "LORA_GATEWAY_01",
+              severity: alert.severity,
+            });
+            // Marcar como guardada
+            setSavedAlertIds(prev => new Set(prev).add(alert.id));
+          } catch (error) {
+            console.error("Error saving alert to DynamoDB:", error);
+            // No bloquear la UI si falla guardar la alerta
+          }
+          
+          // Mostrar modal
           setCriticalAlert(alert);
           setShowCriticalModal(true);
           setAlertCount(prev => prev + 1);
         } else if (alert.severity === "warning") {
-          setWarnings(prev => [...prev, {
-            id: alert.id,
-            message: alert.description,
-            sensor: alert.sensor,
-            value: `${alert.currentValue}${alert.unit}`,
-            timestamp: new Date(),
-          }]);
+          // También guardar alertas de advertencia
+          try {
+            await createAlert({
+              alertId: alert.id,
+              type: "warning",
+              status: "active",
+              title: alert.title,
+              description: alert.description,
+              sensor: alert.sensor,
+              sensorType: alert.sensor.includes("Arduino") || alert.sensor.includes("DHT22") || alert.sensor.includes("MQ-135") 
+                ? "arduino" 
+                : "raspberry",
+              currentValue: alert.currentValue,
+              threshold: alert.threshold,
+              unit: alert.unit,
+              reason: alert.reason,
+              recommendation: alert.recommendation,
+              timestamp: new Date().toISOString(),
+              devEui: "LORA_GATEWAY_01",
+              severity: "warning",
+            });
+            // Marcar como guardada
+            setSavedAlertIds(prev => new Set(prev).add(alert.id));
+          } catch (error) {
+            console.error("Error saving warning alert:", error);
+          }
+          
+          setWarnings(prev => {
+            const exists = prev.some(w => w.id === alert.id);
+            if (!exists) {
+              return [...prev, {
+                id: alert.id,
+                message: alert.description,
+                sensor: alert.sensor,
+                value: `${alert.currentValue}${alert.unit}`,
+                timestamp: new Date(),
+              }];
+            }
+            return prev;
+          });
           setAlertCount(prev => prev + 1);
         }
       });
@@ -494,7 +595,17 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background">
       {/* Banner de Advertencias */}
-      <WarningBanner warnings={warnings} onDismiss={handleDismissWarning} />
+      <WarningBanner 
+        warnings={warnings} 
+        onDismiss={handleDismissWarning}
+        onViewDetails={() => {
+          setActiveTab("alerts");
+          // Scroll suave hacia arriba para ver las alertas
+          setTimeout(() => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }, 100);
+        }}
+      />
 
       {/* Modal de Alerta Crítica */}
       <CriticalAlertModal
@@ -695,30 +806,7 @@ const Index = () => {
 
           <TabsContent value="alerts">
             <AlertsPanel 
-              highlightAlertId={highlightAlertId} 
-              alerts={allAlerts.map(alert => ({
-                id: alert.id,
-                title: alert.title,
-                description: alert.description,
-                type: alert.severity === "critical" ? "critical" : alert.severity === "warning" ? "warning" : "info",
-                timestamp: alert.timestamp ? new Date(alert.timestamp).toLocaleString("es-PE", {
-                  day: "2-digit",
-                  month: "2-digit",
-                  year: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit"
-                }) : "Ahora",
-                icon: alert.icon || Radio,
-                sensor: alert.sensor,
-                currentValue: alert.currentValue,
-                threshold: alert.threshold,
-                unit: alert.unit,
-                exceedPercentage: typeof alert.currentValue === "number" && typeof alert.threshold === "number" 
-                  ? ((alert.currentValue - alert.threshold) / alert.threshold * 100)
-                  : undefined,
-                reason: alert.reason,
-                recommendation: alert.recommendation
-              }))}
+              highlightAlertId={highlightAlertId}
             />
           </TabsContent>
 

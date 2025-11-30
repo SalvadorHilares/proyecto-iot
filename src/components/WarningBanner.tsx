@@ -13,9 +13,10 @@ interface Warning {
 interface WarningBannerProps {
   warnings: Warning[];
   onDismiss: (id: string) => void;
+  onViewDetails?: () => void;
 }
 
-export const WarningBanner = ({ warnings, onDismiss }: WarningBannerProps) => {
+export const WarningBanner = ({ warnings, onDismiss, onViewDetails }: WarningBannerProps) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isVisible, setIsVisible] = useState(true);
 
@@ -74,8 +75,9 @@ export const WarningBanner = ({ warnings, onDismiss }: WarningBannerProps) => {
                 size="sm"
                 className="text-warning-foreground hover:bg-warning-foreground/20"
                 onClick={() => {
-                  // Aquí podrías abrir el panel de alertas
-                  console.log("Ver detalles");
+                  if (onViewDetails) {
+                    onViewDetails();
+                  }
                 }}
               >
                 <Bell className="w-4 h-4 mr-2" />

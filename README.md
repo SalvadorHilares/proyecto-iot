@@ -3,6 +3,7 @@
 Este repositorio contiene:
 
 - `arduino/` – Firmware del nodo sensor (lecturas MQ-2, DHT11, ultrasonido, etc.).
+- `rasperryPi/` – Scripts Python para inferencia de audio (CNN) y gestión LoRa Master.
 - `aws/` – Guía y código para integrar los sensores vía **LoRaWAN + AWS IoT Core**, incluyendo Lambda y formato de payload.
 
 ## Carpetas clave
@@ -10,6 +11,7 @@ Este repositorio contiene:
 | Carpeta | Descripción |
 |---------|-------------|
 | `arduino/` | Sketch principal + documentación de payload. |
+| `rasperryPi/` | Scripts Python para inferencia de audio (CNN) y gestión LoRa Master. |
 | `aws/README.md` | Paso a paso para onboarding de gateway, dispositivos, IoT Rule y Lambda. |
 | `aws/payload-format.md` | Estructura binaria que comparten Arduino y la Lambda. |
 | `aws/lambda-uplink-processor.ts` | Ejemplo de Lambda (Node.js 18) para decodificar y almacenar los uplinks. |
